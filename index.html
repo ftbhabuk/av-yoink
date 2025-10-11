@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>yt audio dl</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #eef2ff;
+            color: #000;
+            font-family: 'Courier New', monospace;
+            padding: 40px 20px;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            font-weight: normal;
+        }
+        
+        .info {
+            background: #d6e4ff;
+            border: 1px solid #0d47a1;
+            padding: 10px;
+            margin-bottom: 20px;
+            font-size: 13px;
+        }
+        
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #000;
+            background: #fff;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        
+        button {
+            background: #0d47a1;
+            color: #fff;
+            border: 1px solid #000;
+            padding: 10px 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        
+        button:hover {
+            background: #1565c0;
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #000;
+            background: #fff;
+            min-height: 40px;
+            display: none;
+        }
+        
+        .status.show {
+            display: block;
+        }
+        
+        .status.error {
+            background: #ffebee;
+            border-color: #c62828;
+        }
+        
+        .status.success {
+            background: #e8f5e9;
+            border-color: #2e7d32;
+        }
+        
+        .video-preview {
+            margin-top: 20px;
+            border: 1px solid #000;
+            background: #fff;
+        }
+        
+        .video-info {
+            display: flex;
+            padding: 15px;
+        }
+        
+        .video-info img {
+            width: 120px;
+            height: 90px;
+            object-fit: cover;
+            margin-right: 15px;
+            border: 1px solid #ccc;
+        }
+        
+        .video-details {
+            flex: 1;
+        }
+        
+        .video-details h3 {
+            font-size: 16px;
+            margin-bottom: 8px;
+            line-height: 1.3;
+        }
+        
+        .video-details p {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+        
+        .progress-container {
+            margin-top: 20px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #f0f0f0;
+            border: 1px solid #000;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: #0d47a1;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        .progress-text {
+            text-align: center;
+            margin-top: 8px;
+            font-size: 14px;
+        }
+        
+        .footer {
+            margin-top: 40px;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>// youtube audio downloader</h1>
+        
+        <div class="info">
+            paste youtube url below. downloads as mp3. personal use only.
+        </div>
+        
+        <input 
+            type="text" 
+            id="urlInput" 
+            placeholder="https://www.youtube.com/watch?v=..."
+            autocomplete="off"
+        >
+        
+        <button id="downloadBtn">download audio</button>
+        
+        <div id="videoPreview" class="video-preview" style="display: none;">
+            <div class="video-info">
+                <img id="videoThumbnail" src="" alt="Video thumbnail">
+                <div class="video-details">
+                    <h3 id="videoTitle"></h3>
+                    <p id="videoUploader"></p>
+                    <p id="videoDuration"></p>
+                </div>
+            </div>
+        </div>
+        
+        <div id="progressContainer" class="progress-container" style="display: none;">
+            <div class="progress-bar">
+                <div id="progressBar" class="progress-fill"></div>
+            </div>
+            <div id="progressText" class="progress-text">0%</div>
+        </div>
+        
+        <div id="status" class="status"></div>
+        
+        <div class="footer">
+            backend: flask + yt-dlp | frontend: vanilla js
+        </div>
+    </div>
+
+    <script>
+        const urlInput = document.getElementById('urlInput');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const status = document.getElementById('status');
+        const videoPreview = document.getElementById('videoPreview');
+        const videoThumbnail = document.getElementById('videoThumbnail');
+        const videoTitle = document.getElementById('videoTitle');
+        const videoUploader = document.getElementById('videoUploader');
+        const videoDuration = document.getElementById('videoDuration');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        
+        // Backend URL - change this to your Flask server URL
+        const API_URL = 'http://localhost:5000';
+        
+        // Get video info and show preview
+        async function getVideoInfo(url) {
+            try {
+                const response = await fetch(`${API_URL}/video-info`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to get video info');
+                }
+                
+                const videoInfo = await response.json();
+                
+                // Show video preview
+                videoThumbnail.src = videoInfo.thumbnail;
+                videoTitle.textContent = videoInfo.title;
+                videoUploader.textContent = `by ${videoInfo.uploader}`;
+                videoDuration.textContent = formatDuration(videoInfo.duration);
+                
+                videoPreview.style.display = 'block';
+                
+            } catch (error) {
+                console.error('Error getting video info:', error);
+                // Don't show error, just continue without preview
+            }
+        }
+        
+        function formatDuration(seconds) {
+            if (!seconds) return '';
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+        
+        downloadBtn.addEventListener('click', async () => {
+            const url = urlInput.value.trim();
+            
+            if (!url) {
+                showStatus('please enter a youtube url', 'error');
+                return;
+            }
+            
+            if (!url.includes('youtube.com') && !url.includes('youtu.be')) {
+                showStatus('invalid youtube url', 'error');
+                return;
+            }
+            
+            downloadBtn.disabled = true;
+            videoPreview.style.display = 'none';
+            progressContainer.style.display = 'none';
+            
+            // Get video info first
+            showStatus('getting video info...', '');
+            await getVideoInfo(url);
+            
+            // Show progress bar and start download
+            progressContainer.style.display = 'block';
+            showStatus('downloading...', '');
+            updateProgress(0);
+            
+            try {
+                // Create abort controller with longer timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 min timeout
+                
+                const response = await fetch(`${API_URL}/download`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url: url }),
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'download failed');
+                }
+                
+                // Get filename from Content-Disposition header
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let filename = 'audio.mp3';
+                if (contentDisposition) {
+                    const matches = /filename="([^"]+)"/.exec(contentDisposition);
+                    if (matches) filename = matches[1];
+                }
+                
+                // Download the file
+                const blob = await response.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(downloadUrl);
+                
+                showStatus('download complete!', 'success');
+                progressContainer.style.display = 'none';
+                urlInput.value = '';
+                
+            } catch (error) {
+                showStatus(`error: ${error.message}`, 'error');
+                progressContainer.style.display = 'none';
+            } finally {
+                downloadBtn.disabled = false;
+            }
+        });
+        
+        function updateProgress(percent) {
+            progressBar.style.width = `${percent}%`;
+            progressText.textContent = `${Math.round(percent)}%`;
+        }
+        
+        function showStatus(message, type) {
+            status.textContent = message;
+            status.className = 'status show';
+            if (type) status.classList.add(type);
+        }
+        
+        // Allow Enter key to submit
+        urlInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                downloadBtn.click();
+            }
+        });
+    </script>
+</body>
+</html>
