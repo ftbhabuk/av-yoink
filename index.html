@@ -217,8 +217,12 @@
         const API_URL = 'http://localhost:5000';
         
         // Get video info and show preview
-        async function getVideoInfo(url) {
+        async function getVideoInfo(url, showLoading = false) {
             try {
+                if (showLoading) {
+                    showStatus('loading video info...', '');
+                }
+                
                 const response = await fetch(`${API_URL}/video-info`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -239,9 +243,16 @@
                 
                 videoPreview.style.display = 'block';
                 
+                if (showLoading) {
+                    showStatus('', '');
+                }
+                
             } catch (error) {
                 console.error('Error getting video info:', error);
-                // Don't show error, just continue without preview
+                videoPreview.style.display = 'none';
+                if (showLoading) {
+                    showStatus('', '');
+                }
             }
         }
         
@@ -266,12 +277,7 @@
             }
             
             downloadBtn.disabled = true;
-            videoPreview.style.display = 'none';
             progressContainer.style.display = 'none';
-            
-            // Get video info first
-            showStatus('getting video info...', '');
-            await getVideoInfo(url);
             
             // Show progress bar and start download
             progressContainer.style.display = 'block';
@@ -340,6 +346,34 @@
             status.className = 'status show';
             if (type) status.classList.add(type);
         }
+        
+        // Auto-fetch video info when URL is pasted or typed
+        let debounceTimer;
+        urlInput.addEventListener('input', async (e) => {
+            const url = e.target.value.trim();
+            
+            // Clear previous timer
+            clearTimeout(debounceTimer);
+            
+            // Hide preview if URL is empty
+            if (!url) {
+                videoPreview.style.display = 'none';
+                return;
+            }
+            
+            // Validate URL format
+            if (!url.includes('youtube.com') && !url.includes('youtu.be')) {
+                videoPreview.style.display = 'none';
+                return;
+            }
+            
+            // Debounce the API call (wait 500ms after user stops typing)
+            debounceTimer = setTimeout(async () => {
+                showStatus('loading video info...', '');
+                await getVideoInfo(url);
+                showStatus('', '');
+            }, 500);
+        });
         
         // Allow Enter key to submit
         urlInput.addEventListener('keypress', (e) => {
