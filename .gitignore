@@ -1,1 +1,4 @@
 /node_modules
+temp/
+*.mp3
+*.mp4
