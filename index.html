@@ -48,6 +48,12 @@
             margin-bottom: 10px;
         }
         
+        .download-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
         button {
             background: #0d47a1;
             color: #fff;
@@ -56,7 +62,15 @@
             font-family: 'Courier New', monospace;
             font-size: 14px;
             cursor: pointer;
-            margin-right: 10px;
+            flex: 1;
+        }
+        
+        #downloadVideoBtn {
+            background: #2e7d32;
+        }
+        
+        #downloadVideoBtn:hover {
+            background: #388e3c;
         }
         
         button:hover {
@@ -173,7 +187,10 @@
             autocomplete="off"
         >
         
-        <button id="downloadBtn">download audio</button>
+        <div class="download-buttons">
+            <button id="downloadBtn">download audio</button>
+            <button id="downloadVideoBtn">download video</button>
+        </div>
         
         <div id="videoPreview" class="video-preview" style="display: none;">
             <div class="video-info">
@@ -203,6 +220,7 @@
     <script>
         const urlInput = document.getElementById('urlInput');
         const downloadBtn = document.getElementById('downloadBtn');
+        const downloadVideoBtn = document.getElementById('downloadVideoBtn');
         const status = document.getElementById('status');
         const videoPreview = document.getElementById('videoPreview');
         const videoThumbnail = document.getElementById('videoThumbnail');
@@ -263,9 +281,17 @@
             return `${mins}:${secs.toString().padStart(2, '0')}`;
         }
         
+        // Audio download function
         downloadBtn.addEventListener('click', async () => {
-            const url = urlInput.value.trim();
-            
+            await downloadContent(urlInput.value.trim(), 'audio');
+        });
+        
+        // Video download function
+        downloadVideoBtn.addEventListener('click', async () => {
+            await downloadContent(urlInput.value.trim(), 'video');
+        });
+        
+        async function downloadContent(url, type) {
             if (!url) {
                 showStatus('please enter a youtube url', 'error');
                 return;
@@ -276,12 +302,14 @@
                 return;
             }
             
+            // Disable both buttons
             downloadBtn.disabled = true;
+            downloadVideoBtn.disabled = true;
             progressContainer.style.display = 'none';
             
             // Show progress bar and start download
             progressContainer.style.display = 'block';
-            showStatus('downloading...', '');
+            showStatus(`downloading ${type}...`, '');
             updateProgress(0);
             
             try {
@@ -289,7 +317,8 @@
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 min timeout
                 
-                const response = await fetch(`${API_URL}/download`, {
+                const endpoint = type === 'audio' ? '/download' : '/download-video';
+                const response = await fetch(`${API_URL}${endpoint}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -302,12 +331,12 @@
                 
                 if (!response.ok) {
                     const error = await response.json();
-                    throw new Error(error.error || 'download failed');
+                    throw new Error(error.error || `${type} download failed`);
                 }
                 
                 // Get filename from Content-Disposition header
                 const contentDisposition = response.headers.get('Content-Disposition');
-                let filename = 'audio.mp3';
+                let filename = type === 'audio' ? 'audio.mp3' : 'video.mp4';
                 if (contentDisposition) {
                     const matches = /filename="([^"]+)"/.exec(contentDisposition);
                     if (matches) filename = matches[1];
@@ -324,7 +353,7 @@
                 document.body.removeChild(a);
                 window.URL.revokeObjectURL(downloadUrl);
                 
-                showStatus('download complete!', 'success');
+                showStatus(`${type} download complete!`, 'success');
                 progressContainer.style.display = 'none';
                 urlInput.value = '';
                 
@@ -332,9 +361,11 @@
                 showStatus(`error: ${error.message}`, 'error');
                 progressContainer.style.display = 'none';
             } finally {
+                // Re-enable both buttons
                 downloadBtn.disabled = false;
+                downloadVideoBtn.disabled = false;
             }
-        });
+        }
         
         function updateProgress(percent) {
             progressBar.style.width = `${percent}%`;
@@ -375,7 +406,7 @@
             }, 500);
         });
         
-        // Allow Enter key to submit
+        // Allow Enter key to submit (defaults to audio)
         urlInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 downloadBtn.click();

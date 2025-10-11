@@ -136,6 +136,80 @@ app.post('/download', async (req, res) => {
     });
 });
 
+// Download video endpoint
+app.post('/download-video', async (req, res) => {
+    const { url } = req.body;
+
+    if (!url) {
+        return res.status(400).json({ error: 'No URL provided' });
+    }
+
+    const id = uuidv4();
+    const outputTemplate = path.join(TEMP_DIR, `${id}.%(ext)s`);
+
+    console.log('Starting video download...');
+    
+    const ytdlp = spawn('yt-dlp', [
+        '-f', 'best[height<=720]', // Best quality up to 720p
+        '-o', outputTemplate, '--no-playlist', url
+    ]);
+
+    let progressData = '';
+
+    ytdlp.stdout.on('data', (data) => {
+        const output = data.toString();
+        progressData += output;
+        
+        // Extract progress percentage from yt-dlp output
+        const progressMatch = output.match(/(\d+\.?\d*)%/);
+        if (progressMatch) {
+            console.log(`Video Progress: ${progressMatch[1]}%`);
+        }
+    });
+
+    ytdlp.stderr.on('data', (data) => {
+        console.log(`yt-dlp video: ${data}`);
+    });
+
+    ytdlp.on('close', (code) => {
+        if (code !== 0) {
+            console.error('Video download failed with code:', code);
+            return res.status(500).json({ error: 'Video download failed' });
+        }
+
+        console.log('Video download complete, finding file...');
+
+        // Find the downloaded file
+        const files = fs.readdirSync(TEMP_DIR).filter(f => f.startsWith(id));
+        
+        if (files.length === 0) {
+            console.error('No video files found in temp directory');
+            return res.status(500).json({ error: 'Video file not found after download' });
+        }
+
+        const filePath = path.join(TEMP_DIR, files[0]);
+        console.log('Sending video file:', filePath);
+        
+        // Get a clean filename (remove the uuid prefix)
+        const cleanName = files[0].replace(`${id}.`, '');
+
+        res.download(filePath, cleanName, (err) => {
+            if (err) {
+                console.error('Video download error:', err);
+            } else {
+                console.log('Video file sent successfully');
+            }
+            // Cleanup
+            setTimeout(() => {
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    console.log('Cleaned up temp video file');
+                }
+            }, 5000);
+        });
+    });
+});
+
 app.get('/health', (req, res) => {
     res.json({ status: 'ok' });
 });
