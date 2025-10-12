@@ -63,6 +63,73 @@ app.post('/video-info', async (req, res) => {
     });
 });
 
+// Get available video formats endpoint
+app.post('/video-formats', async (req, res) => {
+    const { url } = req.body;
+
+    if (!url) {
+        return res.status(400).json({ error: 'No URL provided' });
+    }
+
+    const cmd = `yt-dlp -F "${url}"`;
+    
+    exec(cmd, { maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
+        if (error) {
+            console.error('Video formats error:', stderr);
+            return res.status(500).json({ error: 'Failed to get video formats' });
+        }
+
+        try {
+            // Parse yt-dlp format list output
+            const lines = stdout.split('\n');
+            const formats = [];
+            
+            
+            for (const line of lines) {
+                // Look for lines with video formats (contain resolution and quality)
+                if (line.includes('x') && (line.includes('p,') || line.includes('p '))) {
+                    const parts = line.trim().split(/\s+/);
+                    
+                    if (parts.length >= 3) {
+                        const id = parts[0];
+                        const ext = parts[1];
+                        const resolution = parts[2];
+                        
+                        // Find quality in the line (look for pattern like "144p," or "1080p,")
+                        const qualityMatch = line.match(/(\d+p),?/);
+                        if (qualityMatch) {
+                            const quality = qualityMatch[1];
+                            
+                            // Check if it's a video format
+                            if (resolution.includes('x') && quality.includes('p')) {
+                                formats.push({
+                                    id: id,
+                                    extension: ext,
+                                    resolution: resolution,
+                                    quality: quality,
+                                    size: parts[4] || 'unknown'
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Sort by quality (highest first)
+            formats.sort((a, b) => {
+                const aP = parseInt(a.quality);
+                const bP = parseInt(b.quality);
+                return bP - aP;
+            });
+            
+            res.json({ formats: formats });
+        } catch (parseError) {
+            console.error('Parse error:', parseError);
+            res.status(500).json({ error: 'Failed to parse video formats' });
+        }
+    });
+});
+
 app.post('/download', async (req, res) => {
     const { url } = req.body;
 
@@ -138,7 +205,7 @@ app.post('/download', async (req, res) => {
 
 // Download video endpoint
 app.post('/download-video', async (req, res) => {
-    const { url } = req.body;
+    const { url, quality } = req.body;
 
     if (!url) {
         return res.status(400).json({ error: 'No URL provided' });
@@ -147,10 +214,13 @@ app.post('/download-video', async (req, res) => {
     const id = uuidv4();
     const outputTemplate = path.join(TEMP_DIR, `${id}.%(ext)s`);
 
-    console.log('Starting video download...');
+    console.log('Starting video download with quality:', quality || 'best[height<=720]');
+    
+    // Use provided quality or default to 720p
+    const formatSelector = quality ? `best[height<=${quality}]` : 'best[height<=720]';
     
     const ytdlp = spawn('yt-dlp', [
-        '-f', 'best[height<=720]', // Best quality up to 720p
+        '-f', formatSelector,
         '-o', outputTemplate, '--no-playlist', url
     ]);
 
