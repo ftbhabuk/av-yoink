@@ -4,8 +4,11 @@
   "description": "Simple YouTube audio downloader",
   "main": "server.js",
   "dependencies": {
-    "express": "^4.18.2",
+    "archiver": "^7.0.1",
     "cors": "^2.8.5",
+    "csv-parser": "^3.2.0",
+    "express": "^4.18.2",
+    "multer": "^2.0.2",
     "uuid": "^9.0.0"
   }
 }

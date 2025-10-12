@@ -11,15 +11,33 @@
         <h1>// youtube audio downloader</h1>
         
         <div class="info">
-            paste youtube url below. downloads as mp3. personal use only.
+            paste youtube url below or upload spotify playlist csv. downloads as mp3. personal use only.
         </div>
         
+        <!-- Mode selector -->
+        <div class="mode-selector">
+            <button id="youtubeMode" class="mode-btn active">YouTube URL</button>
+            <button id="spotifyMode" class="mode-btn">Spotify Playlist</button>
+        </div>
+        
+        <!-- YouTube mode -->
+        <div id="youtubeSection" class="input-section">
         <input 
             type="text" 
             id="urlInput" 
             placeholder="https://www.youtube.com/watch?v=..."
             autocomplete="off"
         >
+        </div>
+        
+        <!-- Spotify mode -->
+        <div id="spotifySection" class="input-section" style="display: none;">
+            <div class="file-upload">
+                <input type="file" id="csvFile" accept=".csv" style="display: none;">
+                <button id="uploadBtn" class="upload-btn">Upload Spotify CSV</button>
+                <span id="fileName" class="file-name"></span>
+            </div>
+        </div>
         
         <div class="quality-selector" id="qualitySelector">
             <div class="quality-label">select video quality:</div>
@@ -28,9 +46,25 @@
             </select>
         </div>
         
+        <!-- Playlist selection (for Spotify) -->
+        <div id="playlistSection" class="playlist-section" style="display: none;">
+            <div class="playlist-header">
+                <h3>Select songs to download:</h3>
+                <div class="playlist-controls">
+                    <button id="selectAllBtn" class="control-btn">Select All</button>
+                    <button id="deselectAllBtn" class="control-btn">Deselect All</button>
+                    <span id="selectedCount" class="selected-count">0 selected</span>
+                </div>
+            </div>
+            <div id="songList" class="song-list">
+                <!-- Songs will be populated here -->
+            </div>
+        </div>
+        
         <div class="download-buttons">
             <button id="downloadBtn">download audio</button>
             <button id="downloadVideoBtn">download video</button>
+            <button id="downloadSpotifyBtn" style="display: none;">download selected songs</button>
         </div>
         
         <div id="videoPreview" class="video-preview" style="display: none;">
@@ -48,17 +82,18 @@
             <div class="progress-bar">
                 <div id="progressBar" class="progress-fill"></div>
             </div>
-            <div id="progressText" class="progress-text">0%</div>
+            <div id="progressText" class="progress-text">Downloading...</div>
         </div>
         
         <div id="status" class="status"></div>
         
         <div class="footer">
-            backend: flask + yt-dlp | frontend: vanilla js
+            backend: node.js + yt-dlp | frontend: vanilla js
         </div>
     </div>
 
     <script>
+        // YouTube elements
         const urlInput = document.getElementById('urlInput');
         const downloadBtn = document.getElementById('downloadBtn');
         const downloadVideoBtn = document.getElementById('downloadVideoBtn');
@@ -74,8 +109,231 @@
         const qualitySelector = document.getElementById('qualitySelector');
         const qualitySelect = document.getElementById('qualitySelect');
         
-        // Backend URL - change this to your Flask server URL
+        // Spotify elements
+        const youtubeMode = document.getElementById('youtubeMode');
+        const spotifyMode = document.getElementById('spotifyMode');
+        const youtubeSection = document.getElementById('youtubeSection');
+        const spotifySection = document.getElementById('spotifySection');
+        const csvFile = document.getElementById('csvFile');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const fileName = document.getElementById('fileName');
+        const playlistSection = document.getElementById('playlistSection');
+        const songList = document.getElementById('songList');
+        const selectAllBtn = document.getElementById('selectAllBtn');
+        const deselectAllBtn = document.getElementById('deselectAllBtn');
+        const selectedCount = document.getElementById('selectedCount');
+        const downloadSpotifyBtn = document.getElementById('downloadSpotifyBtn');
+        
+        // Global variables
+        let currentMode = 'youtube';
+        let spotifySongs = [];
+        
+        // Backend URL - change this to your server URL
         const API_URL = 'http://localhost:5000';
+        
+        // Mode switching functionality
+        youtubeMode.addEventListener('click', () => switchMode('youtube'));
+        spotifyMode.addEventListener('click', () => switchMode('spotify'));
+        
+        function switchMode(mode) {
+            currentMode = mode;
+            
+            // Update button states
+            youtubeMode.classList.toggle('active', mode === 'youtube');
+            spotifyMode.classList.toggle('active', mode === 'spotify');
+            
+            // Show/hide sections
+            youtubeSection.style.display = mode === 'youtube' ? 'block' : 'none';
+            spotifySection.style.display = mode === 'spotify' ? 'block' : 'none';
+            
+            // Show/hide download buttons
+            downloadBtn.style.display = mode === 'youtube' ? 'block' : 'none';
+            downloadVideoBtn.style.display = mode === 'youtube' ? 'block' : 'none';
+            downloadSpotifyBtn.style.display = mode === 'spotify' ? 'block' : 'none';
+            
+            // Hide other sections
+            videoPreview.style.display = 'none';
+            qualitySelector.classList.remove('show');
+            playlistSection.style.display = 'none';
+            progressContainer.style.display = 'none';
+            status.className = 'status';
+            status.textContent = '';
+            
+            // Clear inputs
+            urlInput.value = '';
+            csvFile.value = '';
+            fileName.textContent = '';
+            spotifySongs = [];
+        }
+        
+        // File upload functionality
+        uploadBtn.addEventListener('click', () => csvFile.click());
+        csvFile.addEventListener('change', handleFileUpload);
+        
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            if (!file.name.endsWith('.csv')) {
+                showStatus('Please select a CSV file', 'error');
+                return;
+            }
+            
+            fileName.textContent = file.name;
+            showStatus('Uploading and parsing CSV file...', '');
+            
+            const formData = new FormData();
+            formData.append('csvFile', file);
+            
+            fetch(`${API_URL}/parse-csv`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(err => {
+                        throw new Error(err.error || 'Failed to parse CSV');
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                spotifySongs = data.songs;
+                displaySongList();
+                showStatus(`Found ${spotifySongs.length} songs in playlist`, 'success');
+            })
+            .catch(error => {
+                console.error('CSV parsing error:', error);
+                showStatus(`Error: ${error.message}`, 'error');
+                fileName.textContent = '';
+                csvFile.value = '';
+            });
+        }
+        
+        function displaySongList() {
+            songList.innerHTML = '';
+            
+            spotifySongs.forEach((song, index) => {
+                const songItem = document.createElement('div');
+                songItem.className = 'song-item';
+                songItem.innerHTML = `
+                    <input type="checkbox" class="song-checkbox" ${song.selected ? 'checked' : ''} data-index="${index}">
+                    <div class="song-info">
+                        <div class="song-title">${escapeHtml(song.track_name)}</div>
+                        <div class="song-artist">${escapeHtml(song.artist_name)}</div>
+                        ${song.album_name ? `<div class="song-album">${escapeHtml(song.album_name)}</div>` : ''}
+                    </div>
+                `;
+                songList.appendChild(songItem);
+            });
+            
+            // Add event listeners to checkboxes
+            const checkboxes = songList.querySelectorAll('.song-checkbox');
+            checkboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', updateSongSelection);
+            });
+            
+            playlistSection.style.display = 'block';
+            updateSelectedCount();
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function updateSongSelection(event) {
+            const index = parseInt(event.target.dataset.index);
+            spotifySongs[index].selected = event.target.checked;
+            updateSelectedCount();
+        }
+        
+        function updateSelectedCount() {
+            const selected = spotifySongs.filter(song => song.selected).length;
+            selectedCount.textContent = `${selected} selected`;
+        }
+        
+        // Playlist control buttons
+        selectAllBtn.addEventListener('click', () => {
+            spotifySongs.forEach(song => song.selected = true);
+            const checkboxes = songList.querySelectorAll('.song-checkbox');
+            checkboxes.forEach(checkbox => checkbox.checked = true);
+            updateSelectedCount();
+        });
+        
+        deselectAllBtn.addEventListener('click', () => {
+            spotifySongs.forEach(song => song.selected = false);
+            const checkboxes = songList.querySelectorAll('.song-checkbox');
+            checkboxes.forEach(checkbox => checkbox.checked = false);
+            updateSelectedCount();
+        });
+        
+        // Spotify download functionality
+        downloadSpotifyBtn.addEventListener('click', async () => {
+            const selectedSongs = spotifySongs.filter(song => song.selected);
+            
+            if (selectedSongs.length === 0) {
+                showStatus('Please select at least one song to download', 'error');
+                return;
+            }
+            
+            // Disable button during download
+            downloadSpotifyBtn.disabled = true;
+            
+            showStatus(`Starting download of ${selectedSongs.length} songs... this may take a while`, '');
+            progressContainer.style.display = 'block';
+            progressText.textContent = 'Downloading songs...';
+            progressBar.style.width = '50%';
+            
+            try {
+                const response = await fetch(`${API_URL}/download-spotify`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ songs: spotifySongs })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Download failed');
+                }
+                
+                // Get filename from Content-Disposition header
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let filename = 'spotify_playlist.zip';
+                if (contentDisposition) {
+                    const matches = /filename="([^"]+)"/.exec(contentDisposition);
+                    if (matches) filename = matches[1];
+                }
+                
+                // Download the file
+                const blob = await response.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(downloadUrl);
+                
+                showStatus(`Downloaded ${selectedSongs.length} songs as ZIP file!`, 'success');
+                progressContainer.style.display = 'none';
+                
+            } catch (error) {
+                console.error('Spotify download error:', error);
+                showStatus(`Error: ${error.message}`, 'error');
+                progressContainer.style.display = 'none';
+            } finally {
+                downloadSpotifyBtn.disabled = false;
+            }
+        });
         
         // Get video info and formats in parallel (much faster!)
         async function getVideoInfo(url, showLoading = false) {
@@ -92,9 +350,9 @@
                         body: JSON.stringify({ url: url })
                     }),
                     fetch(`${API_URL}/video-formats`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ url: url })
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url })
                     })
                 ]);
                 
@@ -194,7 +452,7 @@
         // Video download function
         downloadVideoBtn.addEventListener('click', async () => {
             const url = urlInput.value.trim();
-            
+        
             if (!url) {
                 showStatus('please enter a youtube url', 'error');
                 return;
@@ -226,7 +484,8 @@
             // Show progress bar and start download
             progressContainer.style.display = 'block';
             showStatus(`downloading ${type}...`, '');
-            updateProgress(0);
+            progressBar.style.width = '50%';
+            progressText.textContent = 'Downloading...';
             
             try {
                 // Create abort controller with longer timeout
@@ -291,11 +550,6 @@
                 downloadBtn.disabled = false;
                 downloadVideoBtn.disabled = false;
             }
-        }
-        
-        function updateProgress(percent) {
-            progressBar.style.width = `${percent}%`;
-            progressText.textContent = `${Math.round(percent)}%`;
         }
         
         function showStatus(message, type) {

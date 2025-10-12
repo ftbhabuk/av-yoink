@@ -5,6 +5,9 @@ const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { spawn } = require('child_process');
+const multer = require('multer');
+const csv = require('csv-parser');
+const archiver = require('archiver');
 
 const app = express();
 const PORT = 5000;
@@ -20,7 +23,7 @@ app.get('/', (req, res) => {
 
 // Increase timeout for long downloads
 app.use((req, res, next) => {
-    res.setTimeout(300000); // 5 minutes
+    res.setTimeout(600000); // 10 minutes for playlist downloads
     next();
 });
 
@@ -28,6 +31,21 @@ const TEMP_DIR = path.join(__dirname, 'temp');
 if (!fs.existsSync(TEMP_DIR)) {
     fs.mkdirSync(TEMP_DIR);
 }
+
+// Configure multer for file uploads
+const upload = multer({
+    dest: TEMP_DIR,
+    limits: {
+        fileSize: 10 * 1024 * 1024 // 10MB limit
+    },
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only CSV files are allowed'), false);
+        }
+    }
+});
 
 // Get video info endpoint (fast)
 app.post('/video-info', async (req, res) => {
@@ -125,6 +143,215 @@ app.post('/video-formats', async (req, res) => {
     });
 });
 
+// Parse Spotify CSV file - improved column detection
+app.post('/parse-csv', upload.single('csvFile'), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: 'No CSV file uploaded' });
+    }
+
+    const songs = [];
+    const filePath = req.file.path;
+    let headers = [];
+
+    fs.createReadStream(filePath)
+        .pipe(csv())
+        .on('headers', (headerList) => {
+            headers = headerList;
+            console.log('CSV Headers:', headers);
+        })
+        .on('data', (row) => {
+            // Try multiple possible column name variations
+            const trackName = row['Track Name'] || row['track_name'] || row['TrackName'] || 
+                            row['Track'] || row['track'] || row['Song'] || row['song'] ||
+                            row['Title'] || row['title'];
+            
+            const artistName = row['Artist Name(s)'] || row['Artist Name'] || row['artist_name'] || 
+                             row['ArtistName'] || row['Artist'] || row['artist'] || 
+                             row['Artists'] || row['artists'];
+            
+            const albumName = row['Album Name'] || row['album_name'] || row['AlbumName'] || 
+                            row['Album'] || row['album'];
+            
+            const duration = row['Duration (ms)'] || row['duration_ms'] || row['DurationMs'] ||
+                           row['Duration'] || row['duration'];
+
+            const song = {
+                track_name: trackName,
+                artist_name: artistName,
+                album_name: albumName,
+                duration_ms: duration,
+                selected: true
+            };
+            
+            // Only add if we have at least track name and artist
+            if (song.track_name && song.artist_name) {
+                songs.push(song);
+                console.log(`✓ Parsed: ${song.track_name} by ${song.artist_name}`);
+            } else {
+                console.log(`✗ Skipped row - missing data:`, { trackName, artistName });
+            }
+        })
+        .on('end', () => {
+            // Clean up the uploaded file
+            fs.unlinkSync(filePath);
+            
+            if (songs.length === 0) {
+                return res.status(400).json({ 
+                    error: 'No valid songs found in CSV file. Please check column names.',
+                    headers: headers 
+                });
+            }
+            
+            console.log(`Parsed ${songs.length} songs from CSV`);
+            res.json({ songs: songs });
+        })
+        .on('error', (error) => {
+            // Clean up the uploaded file
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+            console.error('CSV parsing error:', error);
+            res.status(500).json({ error: 'Failed to parse CSV file' });
+        });
+});
+
+// Download multiple songs from Spotify playlist
+app.post('/download-spotify', async (req, res) => {
+    const { songs } = req.body;
+
+    if (!songs || !Array.isArray(songs) || songs.length === 0) {
+        return res.status(400).json({ error: 'No songs provided' });
+    }
+
+    // Filter only selected songs
+    const selectedSongs = songs.filter(song => song.selected);
+    
+    if (selectedSongs.length === 0) {
+        return res.status(400).json({ error: 'No songs selected for download' });
+    }
+
+    console.log(`Starting download of ${selectedSongs.length} songs`);
+
+    const downloadedFiles = [];
+    const zipId = uuidv4();
+    const zipPath = path.join(TEMP_DIR, `${zipId}.zip`);
+
+    // Download songs one by one
+    for (let i = 0; i < selectedSongs.length; i++) {
+        const song = selectedSongs[i];
+        
+        try {
+            console.log(`[${i + 1}/${selectedSongs.length}] Downloading: ${song.track_name} by ${song.artist_name}`);
+            
+            const searchQuery = `${song.track_name} ${song.artist_name}`;
+            const id = uuidv4();
+            const outputTemplate = path.join(TEMP_DIR, `${id}.%(ext)s`);
+            
+            await new Promise((resolve, reject) => {
+                const ytdlp = spawn('yt-dlp', [
+                    '-x', 
+                    '--audio-format', 'mp3', 
+                    '--audio-quality', '0',
+                    '-o', outputTemplate,
+                    '--no-playlist',
+                    '--no-warnings',
+                    '--quiet',
+                    `ytsearch1:${searchQuery}`
+                ]);
+
+                let errorOutput = '';
+
+                ytdlp.stderr.on('data', (data) => {
+                    errorOutput += data.toString();
+                });
+
+                ytdlp.on('close', (code) => {
+                    if (code !== 0) {
+                        console.error(`Failed to download: ${song.track_name} - ${errorOutput}`);
+                        resolve(); // Continue with next song
+                        return;
+                    }
+
+                    // Find the downloaded file
+                    const files = fs.readdirSync(TEMP_DIR).filter(f => f.startsWith(id));
+                    
+                    if (files.length > 0) {
+                        const filePath = path.join(TEMP_DIR, files[0]);
+                        const cleanName = `${song.artist_name} - ${song.track_name}.mp3`
+                            .replace(/[<>:"/\\|?*]/g, '_')
+                            .substring(0, 200); // Limit filename length
+                        
+                        downloadedFiles.push({
+                            path: filePath,
+                            name: cleanName
+                        });
+                        console.log(`✓ Downloaded: ${cleanName}`);
+                    }
+                    
+                    resolve();
+                });
+
+                // Timeout for each song (2 minutes)
+                setTimeout(() => {
+                    ytdlp.kill();
+                    resolve();
+                }, 120000);
+            });
+            
+        } catch (error) {
+            console.error(`Error downloading ${song.track_name}:`, error);
+            // Continue with next song
+        }
+    }
+
+    if (downloadedFiles.length === 0) {
+        return res.status(500).json({ error: 'Failed to download any songs' });
+    }
+
+    console.log(`Successfully downloaded ${downloadedFiles.length}/${selectedSongs.length} songs`);
+
+    // Create ZIP file
+    const output = fs.createWriteStream(zipPath);
+    const archive = archiver('zip', {
+        zlib: { level: 9 }
+    });
+
+    output.on('close', () => {
+        console.log(`ZIP created: ${archive.pointer()} bytes`);
+        
+        // Send the ZIP file
+        res.download(zipPath, 'spotify_playlist.zip', (err) => {
+            if (err) {
+                console.error('Download error:', err);
+            }
+            
+            // Cleanup all files
+            downloadedFiles.forEach(file => {
+                if (fs.existsSync(file.path)) {
+                    fs.unlinkSync(file.path);
+                }
+            });
+            
+            if (fs.existsSync(zipPath)) {
+                fs.unlinkSync(zipPath);
+            }
+        });
+    });
+
+    archive.on('error', (err) => {
+        console.error('Archive error:', err);
+        res.status(500).json({ error: 'Failed to create ZIP file' });
+    });
+
+    archive.pipe(output);
+
+    // Add files to archive
+    downloadedFiles.forEach(file => {
+        archive.file(file.path, { name: file.name });
+    });
+
+    await archive.finalize();
+});
 
 app.post('/download', async (req, res) => {
     const { url } = req.body;
@@ -149,7 +376,6 @@ app.post('/download', async (req, res) => {
         const output = data.toString();
         progressData += output;
         
-        // Extract progress percentage from yt-dlp output
         const progressMatch = output.match(/(\d+\.?\d*)%/);
         if (progressMatch) {
             console.log(`Progress: ${progressMatch[1]}%`);
@@ -168,7 +394,6 @@ app.post('/download', async (req, res) => {
 
         console.log('Download complete, finding file...');
 
-        // Find the downloaded file
         const files = fs.readdirSync(TEMP_DIR).filter(f => f.startsWith(id));
         
         if (files.length === 0) {
@@ -179,7 +404,6 @@ app.post('/download', async (req, res) => {
         const filePath = path.join(TEMP_DIR, files[0]);
         console.log('Sending file:', filePath);
         
-        // Get a clean filename (remove the uuid prefix)
         const cleanName = files[0].replace(`${id}.`, '');
 
         res.download(filePath, cleanName, (err) => {
@@ -188,7 +412,6 @@ app.post('/download', async (req, res) => {
             } else {
                 console.log('File sent successfully');
             }
-            // Cleanup
             setTimeout(() => {
                 if (fs.existsSync(filePath)) {
                     fs.unlinkSync(filePath);
@@ -212,7 +435,6 @@ app.post('/download-video', async (req, res) => {
 
     console.log('Starting video download with quality:', quality || 'best[height<=720]');
     
-    // Use provided quality or default to 720p
     const formatSelector = quality ? `best[height<=${quality}]` : 'best[height<=720]';
     
     const ytdlp = spawn('yt-dlp', [
@@ -226,7 +448,6 @@ app.post('/download-video', async (req, res) => {
         const output = data.toString();
         progressData += output;
         
-        // Extract progress percentage from yt-dlp output
         const progressMatch = output.match(/(\d+\.?\d*)%/);
         if (progressMatch) {
             console.log(`Video Progress: ${progressMatch[1]}%`);
@@ -245,7 +466,6 @@ app.post('/download-video', async (req, res) => {
 
         console.log('Video download complete, finding file...');
 
-        // Find the downloaded file
         const files = fs.readdirSync(TEMP_DIR).filter(f => f.startsWith(id));
         
         if (files.length === 0) {
@@ -256,7 +476,6 @@ app.post('/download-video', async (req, res) => {
         const filePath = path.join(TEMP_DIR, files[0]);
         console.log('Sending video file:', filePath);
         
-        // Get a clean filename (remove the uuid prefix)
         const cleanName = files[0].replace(`${id}.`, '');
 
         res.download(filePath, cleanName, (err) => {
@@ -265,7 +484,6 @@ app.post('/download-video', async (req, res) => {
             } else {
                 console.log('Video file sent successfully');
             }
-            // Cleanup
             setTimeout(() => {
                 if (fs.existsSync(filePath)) {
                     fs.unlinkSync(filePath);
@@ -283,4 +501,5 @@ app.get('/health', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
     console.log('Make sure yt-dlp and ffmpeg are installed!');
+    console.log('For Spotify playlist downloads, archiver package is required');
 });

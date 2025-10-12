@@ -194,4 +194,163 @@
             font-size: 12px;
             color: #666;
         }
+
+        /* Spotify functionality styles */
+        .mode-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .mode-btn {
+            flex: 1;
+            padding: 8px 16px;
+            border: 1px solid #000;
+            background: #fff;
+            color: #000;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .mode-btn.active {
+            background: #0d47a1;
+            color: #fff;
+        }
+
+        .mode-btn:hover {
+            background: #1565c0;
+            color: #fff;
+        }
+
+        .input-section {
+            margin-bottom: 15px;
+        }
+
+        .file-upload {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .upload-btn {
+            background: #ff6b35;
+            color: #fff;
+            border: 1px solid #000;
+            padding: 10px 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            cursor: pointer;
+            flex: 1;
+        }
+
+        .upload-btn:hover {
+            background: #e55a2b;
+        }
+
+        .file-name {
+            font-size: 13px;
+            color: #666;
+            font-style: italic;
+        }
+
+        .playlist-section {
+            margin: 20px 0;
+            border: 1px solid #000;
+            background: #fff;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .playlist-header {
+            padding: 15px;
+            border-bottom: 1px solid #ccc;
+            background: #f8f9fa;
+        }
+
+        .playlist-header h3 {
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+
+        .playlist-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .control-btn {
+            background: #6c757d;
+            color: #fff;
+            border: 1px solid #000;
+            padding: 5px 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            cursor: pointer;
+            flex: 0 0 auto;
+        }
+
+        .control-btn:hover {
+            background: #5a6268;
+        }
+
+        .selected-count {
+            font-size: 13px;
+            color: #666;
+            margin-left: auto;
+        }
+
+        .song-list {
+            padding: 0;
+        }
+
+        .song-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 15px;
+            border-bottom: 1px solid #eee;
+            transition: background-color 0.2s ease;
+        }
+
+        .song-item:hover {
+            background: #f8f9fa;
+        }
+
+        .song-item:last-child {
+            border-bottom: none;
+        }
+
+        .song-checkbox {
+            margin-right: 10px;
+        }
+
+        .song-info {
+            flex: 1;
+        }
+
+        .song-title {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 2px;
+        }
+
+        .song-artist {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .song-album {
+            font-size: 12px;
+            color: #999;
+            margin-top: 2px;
+        }
+
+        #downloadSpotifyBtn {
+            background: #1db954;
+        }
+
+        #downloadSpotifyBtn:hover {
+            background: #1ed760;
+        }
     
