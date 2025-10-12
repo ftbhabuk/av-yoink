@@ -6,5 +6,5 @@ todo
 [] selection option before downolading for playlist.
 [] additional info download with thumbnail/artist/album prior
 []direct option to get urs spotify csv .? prior
-[] a/v option (!priority)
-[ok]vdo download/ [] multi format selection
+[ok] a/v option (!priority)
+[ok]vdo download/ [ok] multi format selection

@@ -29,7 +29,7 @@ if (!fs.existsSync(TEMP_DIR)) {
     fs.mkdirSync(TEMP_DIR);
 }
 
-// Get video info endpoint
+// Get video info endpoint (fast)
 app.post('/video-info', async (req, res) => {
     const { url } = req.body;
 
@@ -63,7 +63,7 @@ app.post('/video-info', async (req, res) => {
     });
 });
 
-// Get available video formats endpoint
+// Get video formats endpoint (fast)
 app.post('/video-formats', async (req, res) => {
     const { url } = req.body;
 
@@ -80,13 +80,10 @@ app.post('/video-formats', async (req, res) => {
         }
 
         try {
-            // Parse yt-dlp format list output
             const lines = stdout.split('\n');
             const formats = [];
             
-            
             for (const line of lines) {
-                // Look for lines with video formats (contain resolution and quality)
                 if (line.includes('x') && (line.includes('p,') || line.includes('p '))) {
                     const parts = line.trim().split(/\s+/);
                     
@@ -95,12 +92,10 @@ app.post('/video-formats', async (req, res) => {
                         const ext = parts[1];
                         const resolution = parts[2];
                         
-                        // Find quality in the line (look for pattern like "144p," or "1080p,")
                         const qualityMatch = line.match(/(\d+p),?/);
                         if (qualityMatch) {
                             const quality = qualityMatch[1];
                             
-                            // Check if it's a video format
                             if (resolution.includes('x') && quality.includes('p')) {
                                 formats.push({
                                     id: id,
@@ -129,6 +124,7 @@ app.post('/video-formats', async (req, res) => {
         }
     });
 });
+
 
 app.post('/download', async (req, res) => {
     const { url } = req.body;
