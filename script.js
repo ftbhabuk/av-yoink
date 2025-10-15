@@ -33,11 +33,14 @@ const downloadSpotifyBtn = document.getElementById('downloadSpotifyBtn');
 let currentMode = 'youtube';
 let spotifySongs = [];
 
+// wtf is going on here? 
 // Backend URL - change this to your server URL
 // const API_URL = 'http://localhost:5000';
-const API_URL = window.location.hostname === 'localhost' 
-    ? 'http://localhost:5000' 
-    : window.location.origin;
+// const API_URL = window.location.hostname === 'localhost' 
+//     ? 'http://localhost:5000' 
+//     : window.location.origin;
+
+const API_URL = window.location.origin;
 
 // Mode switching functionality
 youtubeMode.addEventListener('click', () => switchMode('youtube'));

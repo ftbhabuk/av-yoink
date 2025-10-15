@@ -12,8 +12,10 @@
         }
         
         body {
-            background: #eef2ff;
-            color: #000;
+            /* background: #1a1a1c; */
+            /* yachine bg */
+            background: #282a36;
+            color: #727070;
             font-family: 'Courier New', monospace;
             padding: 40px 20px;
             line-height: 1.6;
@@ -31,7 +33,7 @@
         }
         
         .info {
-            background: #d6e4ff;
+            background: #c4def8;
             border: 1px solid #0d47a1;
             padding: 10px;
             margin-bottom: 20px;
