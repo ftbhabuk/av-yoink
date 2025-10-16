@@ -19,6 +19,10 @@ RUN npm install
 # Copy application
 COPY . .
 
+# Copy cookies file if it exists
+COPY cookies.txt* ./
+
+
 # Use Render's PORT environment variable
 ENV PORT=10000
 EXPOSE 10000

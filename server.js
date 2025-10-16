@@ -10,7 +10,6 @@ const csv = require('csv-parser');
 const archiver = require('archiver');
 
 const app = express();
-// const PORT = 5000;
 const PORT = process.env.PORT || 5000;
 
 app.use(cors());
@@ -31,6 +30,46 @@ app.use((req, res, next) => {
 const TEMP_DIR = path.join(__dirname, 'temp');
 if (!fs.existsSync(TEMP_DIR)) {
     fs.mkdirSync(TEMP_DIR);
+}
+//deployment n local cookies files directory 
+const COOKIES_FILE = fs.existsSync('/etc/secrets/cookies.txt')
+    ? '/etc/secrets/cookies.txt'  // Render
+    : path.join(__dirname, 'cookies.txt'); // Local
+
+// Helper function to get yt-dlp base arguments with cookies for spawn
+function getYtDlpSpawnArgs() {
+    const args = [];
+    
+    // Add cookies if file exists
+    if (fs.existsSync(COOKIES_FILE)) {
+        args.push('--cookies', COOKIES_FILE);
+    }
+    
+    // Add additional arguments to avoid bot detection
+    args.push(
+        '--no-check-certificates',
+        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        '--extractor-retries', '3'
+    );
+    
+    return args;
+}
+
+// Helper function to get yt-dlp base arguments with cookies for exec (string format)
+function getYtDlpExecArgs() {
+    let args = '';
+    
+    // Add cookies if file exists
+    if (fs.existsSync(COOKIES_FILE)) {
+        args += `--cookies "${COOKIES_FILE}" `;
+    }
+    
+    // Add additional arguments to avoid bot detection
+    args += '--no-check-certificates ';
+    args += '--user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" ';
+    args += '--extractor-retries 3 ';
+    
+    return args;
 }
 
 // Configure multer for file uploads
@@ -56,7 +95,8 @@ app.post('/video-info', async (req, res) => {
         return res.status(400).json({ error: 'No URL provided' });
     }
 
-    const cmd = `yt-dlp --dump-json --no-download "${url}"`;
+    const baseArgs = getYtDlpExecArgs();
+    const cmd = `yt-dlp ${baseArgs}--dump-json --no-download "${url}"`;
     
     exec(cmd, { maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
         if (error) {
@@ -90,7 +130,8 @@ app.post('/video-formats', async (req, res) => {
         return res.status(400).json({ error: 'No URL provided' });
     }
 
-    const cmd = `yt-dlp -F "${url}"`;
+    const baseArgs = getYtDlpExecArgs();
+    const cmd = `yt-dlp ${baseArgs}-F "${url}"`;
     
     exec(cmd, { maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
         if (error) {
@@ -236,8 +277,10 @@ app.post('/download-spotify', async (req, res) => {
     const downloadedFiles = [];
     const zipId = uuidv4();
     const zipPath = path.join(TEMP_DIR, `${zipId}.zip`);
+    
+    const baseArgs = getYtDlpSpawnArgs();
 
-    // Download songs one by one
+    // Download songs one by one with delay between requests
     for (let i = 0; i < selectedSongs.length; i++) {
         const song = selectedSongs[i];
         
@@ -248,8 +291,14 @@ app.post('/download-spotify', async (req, res) => {
             const id = uuidv4();
             const outputTemplate = path.join(TEMP_DIR, `${id}.%(ext)s`);
             
+            // Add delay between downloads to avoid rate limiting (after first song)
+            if (i > 0) {
+                await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+            }
+            
             await new Promise((resolve, reject) => {
-                const ytdlp = spawn('yt-dlp', [
+                const ytdlpArgs = [
+                    ...baseArgs,
                     '-x', 
                     '--audio-format', 'mp3', 
                     '--audio-quality', '0',
@@ -258,7 +307,9 @@ app.post('/download-spotify', async (req, res) => {
                     '--no-warnings',
                     '--quiet',
                     `ytsearch1:${searchQuery}`
-                ]);
+                ];
+
+                const ytdlp = spawn('yt-dlp', ytdlpArgs);
 
                 let errorOutput = '';
 
@@ -292,11 +343,11 @@ app.post('/download-spotify', async (req, res) => {
                     resolve();
                 });
 
-                // Timeout for each song (2 minutes)
+                // Timeout for each song (3 minutes)
                 setTimeout(() => {
                     ytdlp.kill();
                     resolve();
-                }, 120000);
+                }, 180000);
             });
             
         } catch (error) {
@@ -306,7 +357,7 @@ app.post('/download-spotify', async (req, res) => {
     }
 
     if (downloadedFiles.length === 0) {
-        return res.status(500).json({ error: 'Failed to download any songs' });
+        return res.status(500).json({ error: 'Failed to download any songs. YouTube may be blocking requests. Make sure cookies.txt is properly configured.' });
     }
 
     console.log(`Successfully downloaded ${downloadedFiles.length}/${selectedSongs.length} songs`);
@@ -366,10 +417,14 @@ app.post('/download', async (req, res) => {
 
     console.log('Starting download...');
     
-    const ytdlp = spawn('yt-dlp', [
+    const baseArgs = getYtDlpSpawnArgs();
+    const ytdlpArgs = [
+        ...baseArgs,
         '-x', '--audio-format', 'mp3', '--audio-quality', '0',
         '-o', outputTemplate, '--no-playlist', url
-    ]);
+    ];
+    
+    const ytdlp = spawn('yt-dlp', ytdlpArgs);
 
     let progressData = '';
 
@@ -438,10 +493,14 @@ app.post('/download-video', async (req, res) => {
     
     const formatSelector = quality ? `best[height<=${quality}]` : 'best[height<=720]';
     
-    const ytdlp = spawn('yt-dlp', [
+    const baseArgs = getYtDlpSpawnArgs();
+    const ytdlpArgs = [
+        ...baseArgs,
         '-f', formatSelector,
         '-o', outputTemplate, '--no-playlist', url
-    ]);
+    ];
+    
+    const ytdlp = spawn('yt-dlp', ytdlpArgs);
 
     let progressData = '';
 
@@ -503,4 +562,13 @@ app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
     console.log('Make sure yt-dlp and ffmpeg are installed!');
     console.log('For Spotify playlist downloads, archiver package is required');
+    
+    // Check if cookies file exists
+    if (fs.existsSync(COOKIES_FILE)) {
+        console.log('✓ Cookies file found - bot detection bypass enabled');
+    } else {
+        console.log('⚠ Warning: cookies.txt not found - you may encounter bot detection');
+        console.log('  Export cookies using: https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/');
+        console.log('  Place cookies.txt in the project root directory');
+    }
 });
