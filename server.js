@@ -23,9 +23,11 @@ app.get('/', (req, res) => {
 res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Increase timeout for long downloads
+// Allow yt-dlp/ffmpeg enough time to finish before Express closes the socket.
 app.use((req, res, next) => {
-res.setTimeout(6000); // 10 minutes
+const requestTimeoutMs = 10 * 60 * 1000;
+req.setTimeout(requestTimeoutMs);
+res.setTimeout(requestTimeoutMs);
 next();
 });
 
@@ -65,63 +67,120 @@ args += '--extractor-retries 3 ';
 return args;
 }
 
-// Embed metadata + thumbnail
-async function embedMetadataAndThumbnail(audioPath, metadata, thumbnailUrl) {
-const outputPath = audioPath.replace('.mp3', '_final.mp3');
-const thumbnailPath = path.join(TEMP_DIR, `${uuidv4()}_thumb.jpg`);
+function getBestThumbnailUrl(videoInfo) {
+if (Array.isArray(videoInfo?.thumbnails) && videoInfo.thumbnails.length > 0) {
+return [...videoInfo.thumbnails]
+.filter((thumb) => thumb?.url)
+.sort((a, b) => ((b.width || 0) * (b.height || 0)) - ((a.width || 0) * (a.height || 0)))[0]?.url || null;
+}
+return videoInfo?.thumbnail || null;
+}
 
-try {
-// Download thumbnail
-await new Promise((resolve, reject) => {
+async function downloadThumbnail(thumbnailUrl, destinationPath) {
+if (!thumbnailUrl) return null;
+
+return new Promise((resolve, reject) => {
 const protocol = thumbnailUrl.startsWith('https') ? https : http;
-const file = fs.createWriteStream(thumbnailPath);
-protocol.get(thumbnailUrl, (response) => {
+const file = fs.createWriteStream(destinationPath);
+
+const request = protocol.get(thumbnailUrl, (response) => {
+if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+file.close(() => fs.unlink(destinationPath, () => {}));
+downloadThumbnail(response.headers.location, destinationPath).then(resolve).catch(reject);
+return;
+}
+
+if (response.statusCode !== 200) {
+file.close(() => fs.unlink(destinationPath, () => {}));
+reject(new Error(`Thumbnail request failed with status ${response.statusCode}`));
+return;
+}
+
 response.pipe(file);
-file.on('finish', () => { file.close(); resolve(); });
-}).on('error', (err) => {
-fs.unlink(thumbnailPath, () => {});
+file.on('finish', () => file.close(() => resolve(destinationPath)));
+});
+
+request.on('error', (err) => {
+file.close(() => fs.unlink(destinationPath, () => {}));
 reject(err);
 });
 });
+}
 
-// ffmpeg embed
-await new Promise((resolve, reject) => {
-const ffmpegArgs = [
-'-i', audioPath,
-'-i', thumbnailPath,
+async function runFfmpegTagging(audioPath, outputPath, metadata, thumbnailPath = null) {
+return new Promise((resolve, reject) => {
+const ffmpegArgs = ['-i', audioPath];
+
+if (thumbnailPath) {
+ffmpegArgs.push('-i', thumbnailPath);
+}
+
+ffmpegArgs.push(
 '-map', '0:a',
-'-map', '1:0',
-'-c', 'copy',
+'-c:a', 'copy',
 '-id3v2_version', '3',
-'-metadata:s:v', 'title="Album cover"',
-'-metadata:s:v', 'comment="Cover (front)"',
 '-metadata', `title=${metadata.title || 'Unknown'}`,
 '-metadata', `artist=${metadata.artist || 'Unknown'}`,
-'-metadata', `album=${metadata.album || 'YouTube'}`,
-'-y',
-outputPath
-];
+'-metadata', `album=${metadata.album || 'YouTube'}`
+);
+
+if (thumbnailPath) {
+ffmpegArgs.push(
+'-map', '1:0',
+'-c:v', 'mjpeg',
+'-disposition:v', 'attached_pic',
+'-metadata:s:v', 'title=Album cover',
+'-metadata:s:v', 'comment=Cover (front)'
+);
+}
+
+ffmpegArgs.push('-y', outputPath);
+
 const ffmpeg = spawn('ffmpeg', ffmpegArgs);
 let errorOutput = '';
 ffmpeg.stderr.on('data', (data) => { errorOutput += data.toString(); });
 ffmpeg.on('close', (code) => {
-if (fs.existsSync(thumbnailPath)) fs.unlinkSync(thumbnailPath);
 if (code !== 0) {
 console.error('FFmpeg error:', errorOutput);
-reject(new Error('Failed to embed metadata'));
+reject(new Error('Failed to write metadata'));
 } else {
-if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
-fs.renameSync(outputPath, audioPath);
 resolve();
 }
 });
 });
+}
+
+// Embed metadata and attach artwork when available.
+async function embedMetadata(audioPath, metadata, thumbnailUrl = null) {
+const outputPath = audioPath.replace('.mp3', '_final.mp3');
+const thumbnailPath = thumbnailUrl ? path.join(TEMP_DIR, `${uuidv4()}_thumb`) : null;
+
+try {
+if (thumbnailPath) {
+try {
+await downloadThumbnail(thumbnailUrl, thumbnailPath);
+await runFfmpegTagging(audioPath, outputPath, metadata, thumbnailPath);
 console.log('✓ Metadata and thumbnail embedded');
+} catch (artworkError) {
+console.warn('Thumbnail embedding failed, retrying metadata only:', artworkError.message);
+await runFfmpegTagging(audioPath, outputPath, metadata);
+console.log('✓ Metadata embedded without thumbnail');
+}
+} else {
+await runFfmpegTagging(audioPath, outputPath, metadata);
+console.log('✓ Metadata embedded without thumbnail');
+}
+
+if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
+fs.renameSync(outputPath, audioPath);
 return true;
 } catch (error) {
 console.error('Error embedding metadata:', error);
-[thumbnailPath, outputPath].forEach(p => fs.existsSync(p) && fs.unlinkSync(p));
 return false;
+} finally {
+[thumbnailPath, outputPath].forEach((filePath) => {
+if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+});
 }
 }
 
@@ -258,7 +317,7 @@ const ytdlp = spawn('yt-dlp', ytdlpArgs);
 const timeout = setTimeout(() => {
 ytdlp.kill();
 reject(new Error('Download timeout'));
-}, 6000); // 60s timeout per song
+}, 60 * 1000);
 
 let stderrOutput = '';
 ytdlp.stderr.on('data', (data) => {
@@ -287,7 +346,7 @@ return res.status(500).json({ error: 'File not found after download' });
 
 const filePath = path.join(TEMP_DIR, files[0]);
 
-// Try to embed metadata (don't wait too long)
+// Fetch the matched video's thumbnail when possible, but always write the text metadata.
 try {
 const infoCmd = `yt-dlp ${getYtDlpExecArgs()}--dump-json --no-download "ytsearch1:${searchQuery}"`;
 const infoJson = await Promise.race([
@@ -296,16 +355,14 @@ exec(infoCmd, { maxBuffer: 5 * 1024 * 1024 }, (e, out) => {
 try { resolve(JSON.parse(out)); } catch { resolve(null); }
 });
 }),
-new Promise((resolve) => setTimeout(() => resolve(null), 5000))
+new Promise((resolve) => setTimeout(() => resolve(null), 20 * 1000))
 ]);
 
-if (infoJson?.thumbnail) {
-await embedMetadataAndThumbnail(filePath, {
+await embedMetadata(filePath, {
 title: song.track_name,
 artist: song.artist_name,
 album: song.album_name || 'Spotify Playlist'
-}, infoJson.thumbnail);
-}
+}, getBestThumbnailUrl(infoJson));
 } catch (e) {
 console.log('Metadata embedding skipped:', e.message);
 }
@@ -379,13 +436,11 @@ if (files.length === 0) return res.status(500).json({ error: 'File not found' })
 
 const filePath = path.join(TEMP_DIR, files[0]);
 
-if (videoInfo && videoInfo.thumbnail) {
-await embedMetadataAndThumbnail(filePath, {
-title: videoInfo.title,
-artist: videoInfo.uploader || videoInfo.channel,
+await embedMetadata(filePath, {
+title: videoInfo?.title,
+artist: videoInfo?.uploader || videoInfo?.channel,
 album: 'YouTube'
-}, videoInfo.thumbnail);
-}
+}, getBestThumbnailUrl(videoInfo));
 
 let cleanName = videoInfo?.title
 ? `${videoInfo.title.replace(/[<>:"/\\|?*]/g, '_').substring(0, 200)}.mp3`
