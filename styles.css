@@ -29,7 +29,9 @@
         h1 {
             font-size: 24px;
             margin-bottom: 20px;
-            font-weight: normal;
+            font-weight: bold;
+            letter-spacing: 0.04em;
+            color: #f8f8f2;
         }
         
         .info {
@@ -38,6 +40,7 @@
             padding: 10px;
             margin-bottom: 20px;
             font-size: 13px;
+            color: #1b1f23;
         }
         
         input[type="text"] {
@@ -194,7 +197,7 @@
         .footer {
             margin-top: 40px;
             font-size: 12px;
-            color: #666;
+            color: #9aa2b1;
         }
 
         /* Spotify functionality styles */
@@ -228,6 +231,20 @@
 
         .input-section {
             margin-bottom: 15px;
+        }
+
+        .spotify-help {
+            margin-bottom: 10px;
+            font-size: 13px;
+            color: #d6e2ff;
+        }
+
+        .spotify-help a {
+            color: #ffd166;
+        }
+
+        .spotify-help a:hover {
+            color: #ffe29a;
         }
 
         .file-upload {

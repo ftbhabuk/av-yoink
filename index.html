@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>yt audio dl</title>
+    <title>AV Yoink</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
-        <h1>// AV downloader multi site</h1>
+        <h1>AV Yoink</h1>
         
         <div class="info">
-            paste youtube url below or upload spotify playlist csv. download mulitple formats.personal use(.-.)
+            Drop in a YouTube link for a quick audio or video download, or switch to Spotify mode and import a playlist CSV for batch MP3 downloads.
         </div>
         
         <!-- Mode selector -->
@@ -32,6 +32,9 @@
         
         <!-- Spotify mode -->
         <div id="spotifySection" class="input-section" style="display: none;">
+            <div class="spotify-help">
+                Need a playlist CSV? Export it from <a href="https://exportify.net/" target="_blank" rel="noopener noreferrer">Exportify</a>, then upload it here.
+            </div>
             <div class="file-upload">
                 <input type="file" id="csvFile" accept=".csv" style="display: none;">
                 <button id="uploadBtn" class="upload-btn">Upload Spotify CSV</button>
@@ -89,7 +92,7 @@
         
         <div class="footer">
             <!-- backend: node.js + yt-dlp | frontend: vanilla js -->
-             support:yt x spotify 🌽
+             youtube + spotify playlist csv in one place
         </div>
     </div>
 
