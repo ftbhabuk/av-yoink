@@ -2,7 +2,7 @@
 
 A lightweight web application for downloading audio and video from YouTube URLs and Spotify playlists. Built with a minimal Node.js/Express backend using `yt-dlp` and a clean, vanilla JavaScript frontend for a simple, efficient user experience.
 
-![AV-Yoink Interface](./screenshots/251205_19h09m31s_screenshot.png)
+![AV-Yoink Interface](./screenshots/image.png)
 
 ## Features
 

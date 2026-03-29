@@ -378,6 +378,12 @@ downloadVideoBtn.disabled = false;
 }
 
 function showStatus(msg, type = '') {
+if (!msg) {
+status.textContent = '';
+status.className = 'status';
+return;
+}
+
 status.textContent = msg;
 status.className = 'status show';
 if (type) status.classList.add(type);

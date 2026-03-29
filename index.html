@@ -4,33 +4,37 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AV Yoink</title>
+    <link rel="icon" type="image/jpeg" href="screenshots/music.svg">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
         <h1>AV Yoink</h1>
-        
+
         <div class="info">
-            Drop in a YouTube link for a quick audio or video download, or switch to Spotify mode and import a playlist CSV for batch MP3 downloads.
+            Download YouTube audio or video, or batch MP3s from a Spotify CSV.
         </div>
-        
-        <!-- Mode selector -->
+
+        <div class="feature-tags">
+            <span class="feature-tag">/ mp3 + video</span>
+            <span class="feature-tag">artist + album tags</span>
+            <span class="feature-tag">thumbnail embed</span>
+        </div>
+
         <div class="mode-selector">
             <button id="youtubeMode" class="mode-btn active">YouTube URL</button>
             <button id="spotifyMode" class="mode-btn">Spotify Playlist</button>
         </div>
-        
-        <!-- YouTube mode -->
+
         <div id="youtubeSection" class="input-section">
-        <input 
-            type="text" 
-            id="urlInput" 
-            placeholder="https://www.youtube.com/watch?v=..."
-            autocomplete="off"
-        >
+            <input
+                type="text"
+                id="urlInput"
+                placeholder="https://www.youtube.com/watch?v=..."
+                autocomplete="off"
+            >
         </div>
-        
-        <!-- Spotify mode -->
+
         <div id="spotifySection" class="input-section" style="display: none;">
             <div class="spotify-help">
                 Need a playlist CSV? Export it from <a href="https://exportify.net/" target="_blank" rel="noopener noreferrer">Exportify</a>, then upload it here.
@@ -41,15 +45,14 @@
                 <span id="fileName" class="file-name"></span>
             </div>
         </div>
-        
+
         <div class="quality-selector" id="qualitySelector">
             <div class="quality-label">select video quality:</div>
             <select id="qualitySelect">
                 <option value="">loading qualities...</option>
             </select>
         </div>
-        
-        <!-- Playlist selection (for Spotify) -->
+
         <div id="playlistSection" class="playlist-section" style="display: none;">
             <div class="playlist-header">
                 <h3>Select songs to download:</h3>
@@ -63,13 +66,13 @@
                 <!-- Songs will be populated here -->
             </div>
         </div>
-        
+
         <div class="download-buttons">
             <button id="downloadBtn">download audio</button>
             <button id="downloadVideoBtn">download video</button>
             <button id="downloadSpotifyBtn" style="display: none;">download selected songs</button>
         </div>
-        
+
         <div id="videoPreview" class="video-preview" style="display: none;">
             <div class="video-info">
                 <img id="videoThumbnail" src="" alt="Video thumbnail">
@@ -80,19 +83,19 @@
                 </div>
             </div>
         </div>
-        
+
         <div id="progressContainer" class="progress-container" style="display: none;">
             <div class="progress-bar">
                 <div id="progressBar" class="progress-fill"></div>
             </div>
             <div id="progressText" class="progress-text">Downloading...</div>
         </div>
-        
+
         <div id="status" class="status"></div>
-        
+
         <div class="footer">
-            <!-- backend: node.js + yt-dlp | frontend: vanilla js -->
-             youtube + spotify playlist csv in one place
+            <div class="footer-features">/ mp3 + video artist + album tags thumbnail embed</div>
+            <div class="footer-note">/ can get rate-limited occasionally.</div>
         </div>
     </div>
 
